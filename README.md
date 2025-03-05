@@ -2,6 +2,9 @@
 
 A tool to help developers create better estimations for software projects by analyzing requirements, breaking down tasks, and visualizing relationships.
 
+
+![Software Estimation App](./screenshot.png)
+
 ## Features
 
 - Analyze software requirements from text or markdown files
