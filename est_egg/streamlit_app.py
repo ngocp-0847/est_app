@@ -1,8 +1,10 @@
 import streamlit as st
 import os
 import tempfile
+import re
 from est_egg.software_analyst_agent import SoftwareAnalystAgent
 import streamlit.components.v1 as components
+import pandas as pd
 
 def display_task_hierarchy(tasks, level=0):
     """Render task breakdown as markdown with proper indentation"""
@@ -16,6 +18,57 @@ def display_task_hierarchy(tasks, level=0):
         if task.subtasks:
             result += display_task_hierarchy(task.subtasks, level + 1)
     return result
+
+def convert_to_mandays(time_estimate_str):
+    """Convert a time estimate string to mandays (1 manday = 7 hours)"""
+    if not time_estimate_str:
+        return ""
+    
+    # Check for hours
+    hours_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)', time_estimate_str, re.IGNORECASE)
+    if hours_match:
+        hours = float(hours_match.group(1))
+        mandays = hours / 7
+        return f"{mandays:.2f}"
+    
+    # Check for days
+    days_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:days|day|d)', time_estimate_str, re.IGNORECASE)
+    if days_match:
+        days = float(days_match.group(1))
+        return f"{days:.2f}"
+    
+    # If the format is not recognized, return the original
+    return time_estimate_str
+
+def build_task_table(tasks):
+    """Build table data from task hierarchy"""
+    task_rows = []
+    
+    def process_task(task, depth=0):
+        # Convert time estimate to mandays if it exists
+        estimate = task.time_estimate if task.time_estimate else ""
+        manday_estimate = convert_to_mandays(estimate)
+        
+        # Add the task to the data with appropriate indentation
+        row = {
+            "Task Name": "• " * depth + task.task_name,
+            "Difficulty": task.difficulty if task.difficulty else "",
+            "Description": task.description if task.description else "",
+            "Estimated Time (mandays)": manday_estimate,
+            "Original Estimate": estimate
+        }
+        task_rows.append(row)
+        
+        # Process subtasks
+        if task.subtasks:
+            for subtask in task.subtasks:
+                process_task(subtask, depth + 1)
+    
+    # Process all top-level tasks
+    for task in tasks:
+        process_task(task)
+    
+    return task_rows
 
 def display_api_endpoints(apis):
     """Render API endpoints as markdown"""
@@ -69,6 +122,27 @@ def render_mermaid(mermaid_code):
     """
     components.html(html, height=500)
 
+def merge_requirements(text_requirement, uploaded_files):
+    """Merge requirements from text input and uploaded files"""
+    requirements = []
+    
+    # Add text requirement if provided
+    if text_requirement and text_requirement.strip():
+        requirements.append(text_requirement.strip())
+    
+    # Process uploaded files
+    file_contents = []
+    for uploaded_file in uploaded_files:
+        content = uploaded_file.read().decode("utf-8")
+        file_contents.append(f"## From file: {uploaded_file.name}\n{content}")
+    
+    # Add file contents to requirements
+    if file_contents:
+        requirements.append("\n\n".join(file_contents))
+    
+    # Merge all requirements
+    return "\n\n---\n\n".join(requirements)
+
 def main():
     st.set_page_config(
         page_title="Software Requirement Analyzer", 
@@ -90,65 +164,82 @@ def main():
     api_key = st.sidebar.text_input("OpenAI API Key", value=st.session_state.api_key, type="password")
     st.session_state.api_key = api_key
     
-    input_method = st.sidebar.radio("Input Method", ["Text Input", "Markdown File"])
-    
-    # Main area for inputs
+    # Replace radio buttons with checkboxes to allow multiple selections
     st.header("Requirement Input")
+    col1, col2 = st.columns(2)
+    with col1:
+        use_text_input = st.checkbox("Use Text Input", value=True)
+    with col2:
+        use_file_input = st.checkbox("Use Markdown Files", value=False)
     
-    if input_method == "Text Input":
+    requirement_text = ""
+    uploaded_files = []
+    
+    if use_text_input:
         requirement_text = st.text_area(
             "Enter your software requirement:",
             height=200,
             placeholder="Example: Implement a user authentication system with registration, login, password reset, and OAuth integration."
         )
+    
+    if use_file_input:
+        uploaded_files = st.file_uploader("Upload markdown files", type=["md"], accept_multiple_files=True)
         
-        if st.button("Analyze Requirement"):
-            if not requirement_text.strip():
-                st.error("Please enter a requirement to analyze.")
-                return
-                
-            if not api_key:
-                st.error("Please provide your OpenAI API key.")
-                return
-                
-            try:
-                with st.spinner("Analyzing requirement..."):
-                    analyst = SoftwareAnalystAgent(api_key=api_key)
-                    results = analyst.analyze_from_text(requirement_text)
-                    st.session_state.analysis_results = results
-                    st.success("Analysis complete!")
-            except Exception as e:
-                st.error(f"Error during analysis: {str(e)}")
-                
-    else:  # Markdown File
-        uploaded_file = st.file_uploader("Upload a markdown file", type=["md"])
-        
-        if uploaded_file is not None:
-            content = uploaded_file.read().decode("utf-8")
-            st.text_area("File preview:", value=content[:500] + ("..." if len(content) > 500 else ""), height=150, disabled=True)
+        if uploaded_files:
+            st.subheader("File Previews")
+            for i, uploaded_file in enumerate(uploaded_files):
+                with st.expander(f"Preview: {uploaded_file.name}"):
+                    content = uploaded_file.read().decode("utf-8")
+                    uploaded_file.seek(0)  # Reset file pointer after reading
+                    st.text_area(f"File {i+1} content:", value=content[:500] + ("..." if len(content) > 500 else ""), height=150, disabled=True)
+    
+    if st.button("Analyze Requirements"):
+        # Check if any inputs are provided
+        if not requirement_text.strip() and not uploaded_files:
+            st.error("Please provide at least one input method (text or files).")
+            return
             
-            if st.button("Analyze File"):
-                if not api_key:
-                    st.error("Please provide your OpenAI API key.")
-                    return
-                    
-                try:
-                    with st.spinner("Analyzing markdown file..."):
-                        # Save the uploaded content to a temporary file
-                        with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as tmp:
-                            tmp.write(content.encode())
-                            temp_path = tmp.name
-                            
-                        # Analyze the temporary file
-                        analyst = SoftwareAnalystAgent(api_key=api_key)
-                        results = analyst.analyze_from_markdown(temp_path)
-                        st.session_state.analysis_results = results
+        if not api_key:
+            st.error("Please provide your OpenAI API key.")
+            return
+            
+        try:
+            with st.spinner("Analyzing requirements..."):
+                analyst = SoftwareAnalystAgent(api_key=api_key)
+                
+                if uploaded_files and not requirement_text.strip():
+                    # Only file uploads
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_files = []
+                        for uploaded_file in uploaded_files:
+                            temp_path = os.path.join(temp_dir, uploaded_file.name)
+                            with open(temp_path, "wb") as f:
+                                f.write(uploaded_file.getbuffer())
+                            temp_files.append(temp_path)
                         
-                        # Clean up
-                        os.unlink(temp_path)
-                        st.success("Analysis complete!")
-                except Exception as e:
-                    st.error(f"Error during analysis: {str(e)}")
+                        results = analyst.analyze_from_multiple_markdown(temp_files)
+                
+                elif requirement_text.strip() and not uploaded_files:
+                    # Only text input
+                    results = analyst.analyze_from_text(requirement_text)
+                
+                else:
+                    # Both inputs - merge them
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_files = []
+                        for uploaded_file in uploaded_files:
+                            temp_path = os.path.join(temp_dir, uploaded_file.name)
+                            with open(temp_path, "wb") as f:
+                                f.write(uploaded_file.getbuffer())
+                            temp_files.append(temp_path)
+                        
+                        merged_requirement = merge_requirements(requirement_text, uploaded_files)
+                        results = analyst.analyze_from_text(merged_requirement)
+                
+                st.session_state.analysis_results = results
+                st.success("Analysis complete!")
+        except Exception as e:
+            st.error(f"Error during analysis: {str(e)}")
     
     # Display results if available
     if st.session_state.analysis_results:
@@ -175,8 +266,25 @@ def main():
         # Tab 2: Task Breakdown
         with tabs[1]:
             st.subheader("Task Breakdown")
-            task_md = display_task_hierarchy(results.task_breakdown)
-            st.markdown(task_md)
+            
+            # Create a table for task breakdown
+            task_data = build_task_table(results.task_breakdown)
+            if task_data:
+                df = pd.DataFrame(task_data)
+                # Hide the original estimate column but keep it for reference
+                columns_to_display = ["Task Name", "Difficulty", "Description", "Estimated Time (mandays)"]
+                st.dataframe(
+                    df[columns_to_display],
+                    hide_index=True,
+                    use_container_width=True
+                )
+                
+                # Show the raw breakdown as well (optional - can be expanded)
+                with st.expander("View Hierarchical Breakdown"):
+                    task_md = display_task_hierarchy(results.task_breakdown)
+                    st.markdown(task_md)
+            else:
+                st.info("No task breakdown available.")
         
         # Tab 3: API Endpoints
         with tabs[2]:

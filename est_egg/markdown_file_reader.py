@@ -4,19 +4,19 @@ from typing import Dict, List, Optional
 
 class MarkdownFileReader:
     """
-    Utility class to read and parse markdown files containing software requirements.
+    Utility class for reading and extracting requirements from markdown files.
     """
     
     @staticmethod
     def read_file(file_path: str) -> str:
         """
-        Read a markdown file and return its content as string.
+        Read the content of a markdown file.
         
         Args:
             file_path: Path to the markdown file
             
         Returns:
-            Content of the file as string
+            Content of the file as a string
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -61,34 +61,27 @@ class MarkdownFileReader:
     @staticmethod
     def extract_requirements(content: str) -> List[str]:
         """
-        Extract requirements from markdown content by looking for specific patterns.
+        Extract requirements from markdown content.
+        Looks for sections marked as requirements and extracts their content.
         
         Args:
-            content: Markdown content
+            content: Markdown content as string
             
         Returns:
-            List of requirement statements
+            List of extracted requirements
         """
-        requirements = []
+        # Simple extraction: consider all content as requirements
+        # In a more advanced implementation, you could look for specific sections
+        # marked with headers like "## Requirements" or bullet points
         
-        # Look for patterns that typically indicate requirements
-        # 1. Items in lists (- [ ] Task or - Task)
-        list_pattern = r'^\s*[-*]\s*(?:\[[x ]\])?\s*(.+)$'
+        # Split by headers to identify potential requirement sections
+        sections = re.split(r'^#{1,6}\s+', content, flags=re.MULTILINE)
         
-        # 2. Lines in "Requirements" or similar sections
+        # Filter out empty sections
+        requirements = [section.strip() for section in sections if section.strip()]
         
-        lines = content.split('\n')
-        for line in lines:
-            list_match = re.match(list_pattern, line, re.MULTILINE)
-            if list_match:
-                requirements.append(list_match.group(1).strip())
-        
-        # Also extract sections that might contain requirements
-        sections = MarkdownFileReader.extract_sections(content)
-        for title, text in sections.items():
-            if any(keyword in title.lower() for keyword in ['requirement', 'feature', 'user story', 'spec']):
-                # Add section content if it's not already in requirements
-                if text and text not in requirements:
-                    requirements.append(text)
-        
+        # If no clear sections, return the whole content
+        if not requirements:
+            requirements = [content]
+            
         return requirements

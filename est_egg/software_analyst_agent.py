@@ -152,6 +152,41 @@ class SoftwareAnalystAgent:
                 mermaid_erd_diagram=""
             )
     
+    def analyze_from_multiple_markdown(self, file_paths: List[str]) -> SoftwareAnalysisOutputSchema:
+        """
+        Read requirements from multiple markdown files and analyze them together.
+        
+        Args:
+            file_paths: List of paths to markdown files
+            
+        Returns:
+            Analysis result with task breakdown and diagrams
+        """
+        try:
+            all_requirements = []
+            
+            for file_path in file_paths:
+                md_content = MarkdownFileReader.read_file(file_path)
+                requirements = MarkdownFileReader.extract_requirements(md_content)
+                file_name = os.path.basename(file_path)
+                
+                # Add header for each file's requirements
+                file_requirements = [f"# From {file_name}:", ""] + requirements
+                all_requirements.append("\n".join(file_requirements))
+            
+            # Combine all extracted requirements into a single text
+            merged_requirements = "\n\n---\n\n".join(all_requirements)
+            
+            return self.analyze_from_text(merged_requirements)
+        except Exception as e:
+            print(f"Error processing markdown files: {str(e)}")
+            return SoftwareAnalysisOutputSchema(
+                summary=f"Failed to analyze: {str(e)}",
+                task_breakdown=[],
+                mermaid_task_diagram="",
+                mermaid_erd_diagram=""
+            )
+    
     def print_analysis_results(self, response: SoftwareAnalysisOutputSchema):
         """
         Print the analysis results in a readable format.
