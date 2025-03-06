@@ -224,16 +224,22 @@ def render_mermaid(mermaid_code):
         edited_code = st.text_area(
             "Edit Mermaid code and try again:", 
             value=sanitized_code,
-            height=200
+            height=200,
+            key=f"text_area_{diagram_id}"  # Add a unique key for the text area
         )
         
-        if st.button("Try rendering edited code"):
-            render_mermaid_debug(edited_code)
+        # Add a unique key for the button
+        if st.button("Try rendering edited code", key=f"render_button_{diagram_id}"):
+            render_mermaid_debug(edited_code, diagram_id)
 
-def render_mermaid_debug(mermaid_code):
+def render_mermaid_debug(mermaid_code, debug_id=None):
     """A simpler mermaid renderer for debugging purposes"""
+    # Generate a unique ID if none provided
+    if debug_id is None:
+        debug_id = uuid.uuid4().hex[:8]
+        
     html_content = f"""
-    <div class="mermaid">
+    <div class="mermaid" id="debug_{debug_id}">
     {html.escape(mermaid_code)}
     </div>
     <script type="module">
