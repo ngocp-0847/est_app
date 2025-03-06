@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import html
 import uuid
+from streamlit_markdown import st_markdown  # Import the streamlit-markdown package
 
 def display_task_hierarchy(tasks, level=0):
     """Render task breakdown as markdown with proper indentation"""
@@ -143,111 +144,32 @@ def sanitize_mermaid(mermaid_code):
     
     return mermaid_code
 
-def render_mermaid(mermaid_code):
-    """Render Mermaid diagram using HTML component with improved error handling"""
+def render_mermaid(mermaid_code, diagram_type=""):
+    """
+    Render Mermaid diagram using streamlit-markdown
+    
+    Args:
+        mermaid_code: The mermaid diagram code to render
+        diagram_type: Type of diagram for descriptive purposes
+    """
     if not mermaid_code:
-        st.info("No diagram code provided.")
+        st.info(f"No {diagram_type} diagram available.")
         return
-    
-    # Sanitize the mermaid code to fix common issues
-    sanitized_code = sanitize_mermaid(mermaid_code)
-    
-    # Create a unique ID for this diagram to avoid conflicts when multiple diagrams are rendered
-    diagram_id = f"mermaid-{uuid.uuid4().hex[:8]}"
-    
-    # HTML with more robust error handling
-    html_content = f"""
-    <div id="{diagram_id}-container">
-        <div id="{diagram_id}" class="mermaid">
-{html.escape(sanitized_code)}
-        </div>
-        <div id="{diagram_id}-error" style="color: red; display: none; margin-top: 10px; padding: 10px; border: 1px solid red; background-color: #ffe6e6;"></div>
-    </div>
-    
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.esm.min.mjs';
         
-        try {{
-            mermaid.initialize({{ 
-                startOnLoad: true,
-                theme: 'default',
-                securityLevel: 'loose',
-                logLevel: 'error',
-                er: {{ diagramPadding: 20 }},
-                flowchart: {{ diagramPadding: 20 }},
-                sequence: {{ diagramMarginX: 50, diagramMarginY: 10 }},
-            }});
-            
-            let renderComplete = false;
-            
-            // Set timeout to detect rendering failures
-            const timeout = setTimeout(() => {{
-                if (!renderComplete) {{
-                    document.getElementById('{diagram_id}-error').style.display = 'block';
-                    document.getElementById('{diagram_id}-error').innerHTML = 
-                        '<strong>Diagram rendering timed out.</strong><br/>' +
-                        'There might be syntax errors in the Mermaid code.';
-                }}
-            }}, 5000);
-            
-            // Try to render the diagram
-            try {{
-                await mermaid.run();
-                renderComplete = true;
-                clearTimeout(timeout);
-            }} catch (err) {{
-                clearTimeout(timeout);
-                console.error("Mermaid rendering error:", err);
-                document.getElementById('{diagram_id}-error').style.display = 'block';
-                document.getElementById('{diagram_id}-error').innerHTML = 
-                    '<strong>Error rendering diagram:</strong><br/>' + 
-                    err.message || 'Unknown error';
-            }}
-            
-        }} catch (err) {{
-            console.error("Mermaid initialization error:", err);
-            document.getElementById('{diagram_id}-error').style.display = 'block';
-            document.getElementById('{diagram_id}-error').innerHTML = 
-                '<strong>Error initializing Mermaid:</strong><br/>' + 
-                err.message || 'Unknown error';
-        }}
-    </script>
-    """
+    # Format the code as a mermaid code block for markdown rendering
+    markdown_text = f"```mermaid\n{mermaid_code}\n```"
     
-    # Render the HTML with increased height to accommodate error messages
-    components.html(html_content, height=600, scrolling=True)
-
-    # Add a debug expander to help diagnose issues
-    with st.expander("Diagram Troubleshooting"):
-        st.caption("If the diagram fails to render, you can examine and edit the code below:")
+    try:
+        # Render using st_markdown from streamlit-markdown package with a unique key
+        diagram_id = f"mermaid-{uuid.uuid4().hex[:8]}"
+        st_markdown(markdown_text, key=diagram_id)
         
-        edited_code = st.text_area(
-            "Edit Mermaid code and try again:", 
-            value=sanitized_code,
-            height=200,
-            key=f"text_area_{diagram_id}"  # Add a unique key for the text area
-        )
-        
-        # Add a unique key for the button
-        if st.button("Try rendering edited code", key=f"render_button_{diagram_id}"):
-            render_mermaid_debug(edited_code, diagram_id)
-
-def render_mermaid_debug(mermaid_code, debug_id=None):
-    """A simpler mermaid renderer for debugging purposes"""
-    # Generate a unique ID if none provided
-    if debug_id is None:
-        debug_id = uuid.uuid4().hex[:8]
-        
-    html_content = f"""
-    <div class="mermaid" id="debug_{debug_id}">
-    {html.escape(mermaid_code)}
-    </div>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({{ startOnLoad: true, theme: 'default', securityLevel: 'loose' }});
-    </script>
-    """
-    components.html(html_content, height=500)
+        # Still display the code for reference
+        with st.expander("View Mermaid Code"):
+            st.code(mermaid_code, language="mermaid")
+    except Exception as e:
+        st.error(f"Error rendering diagram: {str(e)}")
+        st.code(mermaid_code, language="mermaid")
 
 def merge_requirements(text_requirement, uploaded_files):
     """Merge requirements from text input and uploaded files"""
@@ -521,33 +443,25 @@ def main():
         with tabs[7]:
             st.subheader("Task Hierarchy Diagram")
             if results.mermaid_task_diagram:
-                render_mermaid(results.mermaid_task_diagram)
-                st.markdown("**Mermaid Code:**")
-                st.code(results.mermaid_task_diagram, language="mermaid")
+                render_mermaid(results.mermaid_task_diagram, "task hierarchy")
             else:
                 st.info("No task diagram available.")
                 
             st.subheader("Entity Relationship Diagram")
             if results.mermaid_erd_diagram:
-                render_mermaid(results.mermaid_erd_diagram)
-                st.markdown("**Mermaid Code:**")
-                st.code(results.mermaid_erd_diagram, language="mermaid")
+                render_mermaid(results.mermaid_erd_diagram, "entity relationship")
             else:
                 st.info("No ERD diagram available.")
                 
             st.subheader("Component Diagram")
             if results.mermaid_component_diagram:
-                render_mermaid(results.mermaid_component_diagram)
-                st.markdown("**Mermaid Code:**")
-                st.code(results.mermaid_component_diagram, language="mermaid")
+                render_mermaid(results.mermaid_component_diagram, "component")
             else:
                 st.info("No component diagram available.")
                 
             st.subheader("Sequence Diagram")
             if results.mermaid_sequence_diagram:
-                render_mermaid(results.mermaid_sequence_diagram)
-                st.markdown("**Mermaid Code:**")
-                st.code(results.mermaid_sequence_diagram, language="mermaid")
+                render_mermaid(results.mermaid_sequence_diagram, "sequence")
             else:
                 st.info("No sequence diagram available.")
 
